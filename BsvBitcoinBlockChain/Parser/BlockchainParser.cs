@@ -4,6 +4,12 @@
 // </copyright>
 //-----------------------------------------------------------------------
 
+using System.Runtime.CompilerServices;
+using System.Runtime.CompilerServices;
+using BsvBitcoinBlockChain.Utils;
+
+[assembly: InternalsVisibleTo("Blockchain.Analyze.Tests")]
+
 namespace BitcoinBlockchain.Parser
 {
     using System;
@@ -58,8 +64,10 @@ namespace BitcoinBlockchain.Parser
         /// starting from "blk00000.dat" and with no gaps in the numeric section.
         /// Note that this exception is referring only to the file names and not to the files content.
         /// </exception>
-        [SuppressMessage("Microsoft.Naming", "CA2204:Literals should be spelled correctly", Justification = "blk and dat refer to file names and extensions")]
-        [SuppressMessage("StyleCop.CSharp.DocumentationRules", "SA1650:ElementDocumentationMustBeSpelledCorrectly", Justification = "blk and dat refer to file names and extensions.")]
+        [SuppressMessage("Microsoft.Naming", "CA2204:Literals should be spelled correctly", Justification =
+            "blk and dat refer to file names and extensions")]
+        [SuppressMessage("StyleCop.CSharp.DocumentationRules", "SA1650:ElementDocumentationMustBeSpelledCorrectly",
+            Justification = "blk and dat refer to file names and extensions.")]
         public BlockchainParser(string blockchainPath)
             : this(GetBlockchainFiles(GetFileInfoList(blockchainPath, null)))
         {
@@ -83,8 +91,10 @@ namespace BitcoinBlockchain.Parser
         /// starting from "blk00000.dat" and with no gaps in the numeric section.
         /// Note that this exception is referring only to the file names and not to the files content.
         /// </exception>
-        [SuppressMessage("Microsoft.Naming", "CA2204:Literals should be spelled correctly", Justification = "blk and dat refer to file names and extensions")]
-        [SuppressMessage("StyleCop.CSharp.DocumentationRules", "SA1650:ElementDocumentationMustBeSpelledCorrectly", Justification = "blk and dat refer to file names and extensions.")]
+        [SuppressMessage("Microsoft.Naming", "CA2204:Literals should be spelled correctly", Justification =
+            "blk and dat refer to file names and extensions")]
+        [SuppressMessage("StyleCop.CSharp.DocumentationRules", "SA1650:ElementDocumentationMustBeSpelledCorrectly",
+            Justification = "blk and dat refer to file names and extensions.")]
         public BlockchainParser(string blockchainPath, string firstBlockchainFileName)
             : this(GetBlockchainFiles(GetFileInfoList(blockchainPath, firstBlockchainFileName)))
         {
@@ -146,7 +156,7 @@ namespace BitcoinBlockchain.Parser
         {
             BlockHeader blockHeader = new BlockHeader();
 
-            int positionInBaseStreamAtBlockHeaderStart = (int)blockMemoryStreamReader.BaseStream.Position;
+            int positionInBaseStreamAtBlockHeaderStart = (int) blockMemoryStreamReader.BaseStream.Position;
 
             blockHeader.BlockVersion = blockMemoryStreamReader.ReadUInt32();
 
@@ -178,7 +188,7 @@ namespace BitcoinBlockchain.Parser
             blockHeader.BlockTargetDifficulty = blockMemoryStreamReader.ReadUInt32();
             blockHeader.BlockNonce = blockMemoryStreamReader.ReadUInt32();
 
-            int positionInBaseStreamAfterBlockHeaderEnd = (int)blockMemoryStreamReader.BaseStream.Position;
+            int positionInBaseStreamAfterBlockHeaderEnd = (int) blockMemoryStreamReader.BaseStream.Position;
 
             using (SHA256Managed sha256 = new SHA256Managed())
             {
@@ -188,15 +198,19 @@ namespace BitcoinBlockchain.Parser
                 //// The base stream of blockMemoryStreamReader is that in-memory buffer.
 
                 byte[] baseBuffer = blockMemoryStreamReader.GetBuffer();
-                int blockHeaderBufferSize = positionInBaseStreamAfterBlockHeaderEnd - positionInBaseStreamAtBlockHeaderStart;
+                int blockHeaderBufferSize =
+                    positionInBaseStreamAfterBlockHeaderEnd - positionInBaseStreamAtBlockHeaderStart;
 
                 if (blockHeaderBufferSize != ExpectedBlockHeaderBufferSize)
                 {
                     // We have a problem. The block header should be 80 bytes in size.
-                    throw new InvalidBlockchainContentException(string.Format(CultureInfo.InvariantCulture, "Block header buffer size has an invalid length: {0}. Expected: {1}.", blockHeaderBufferSize, ExpectedBlockHeaderBufferSize));
+                    throw new InvalidBlockchainContentException(string.Format(CultureInfo.InvariantCulture,
+                        "Block header buffer size has an invalid length: {0}. Expected: {1}.", blockHeaderBufferSize,
+                        ExpectedBlockHeaderBufferSize));
                 }
 
-                byte[] hash1 = sha256.ComputeHash(baseBuffer, positionInBaseStreamAtBlockHeaderStart, blockHeaderBufferSize);
+                byte[] hash1 = sha256.ComputeHash(baseBuffer, positionInBaseStreamAtBlockHeaderStart,
+                    blockHeaderBufferSize);
                 blockHeader.BlockHash = new ByteArray(sha256.ComputeHash(hash1).ReverseByteArray());
             }
 
@@ -212,17 +226,48 @@ namespace BitcoinBlockchain.Parser
         /// <returns>
         /// The Bitcoin transaction input that was parsed.
         /// </returns>
-        private static TransactionInput ParseTransactionInput(BlockMemoryStreamReader blockMemoryStreamReader)
+        internal static TransactionInput ParseTransactionInput(BlockMemoryStreamReader blockMemoryStreamReader)
         {
             TransactionInput transactionInput = new TransactionInput();
 
-            transactionInput.SourceTransactionHash = new ByteArray(blockMemoryStreamReader.ReadBytes(32).ReverseByteArray());
+            transactionInput.SourceTransactionHash =
+                new ByteArray(blockMemoryStreamReader.ReadBytes(32).ReverseByteArray());
             transactionInput.SourceTransactionOutputIndex = blockMemoryStreamReader.ReadUInt32();
 
-            int scriptLength = (int)blockMemoryStreamReader.ReadVariableLengthInteger();
+            int scriptLength = (int) blockMemoryStreamReader.ReadVariableLengthInteger();
+            int signLength = (int) blockMemoryStreamReader.ReadVariableLengthInteger();
 
-            // Ignore the script portion.
-            transactionInput.InputScript = new ByteArray(blockMemoryStreamReader.ReadBytes(scriptLength));
+            if (signLength == 4)
+            {
+                // ignore
+                blockMemoryStreamReader.ReadBytes(scriptLength - 1);
+            }
+            else
+            {
+                transactionInput.Signature = new ByteArray(blockMemoryStreamReader.ReadBytes(signLength));
+                if (scriptLength > signLength + 1)
+                {
+                    var pubKeyLength = (int) blockMemoryStreamReader.ReadVariableLengthInteger();
+                    var pubKey = blockMemoryStreamReader.ReadBytes(pubKeyLength);
+                    using (SHA256Managed sha256 = new SHA256Managed())
+                    {
+                        transactionInput.PubKey = new ByteArray(pubKey);
+
+                        var ripemd = HashUtils.Ripemd160(transactionInput.PubKey.ToArray());
+                        var extended = new byte[ripemd.Length + 1];
+                        extended[0] = 0x00;
+                        Array.Copy(ripemd, 0, extended, 1, ripemd.Length);
+                        var doubleHash = sha256.ComputeHash(sha256.ComputeHash(extended));
+                        var newExtended = new byte[extended.Length + 4];
+                        Array.Copy(extended, 0, newExtended, 0, extended.Length);
+                        Array.Copy(doubleHash, 0, newExtended, extended.Length, 4);
+                        transactionInput.Address = Base58.Encode(newExtended);
+                    }
+                }
+            }
+
+//            // Ignore the script portion.
+//            transactionInput.InputScript = new ByteArray(blockMemoryStreamReader.ReadBytes(scriptLength));
 
             // Ignore the sequence number. 
             blockMemoryStreamReader.SkipBytes(4);
@@ -244,7 +289,7 @@ namespace BitcoinBlockchain.Parser
             TransactionOutput transactionOutput = new TransactionOutput();
 
             transactionOutput.OutputValueSatoshi = blockMemoryStreamReader.ReadUInt64();
-            int scriptLength = (int)blockMemoryStreamReader.ReadVariableLengthInteger();
+            int scriptLength = (int) blockMemoryStreamReader.ReadVariableLengthInteger();
             transactionOutput.OutputScript = new ByteArray(blockMemoryStreamReader.ReadBytes(scriptLength));
 
             return transactionOutput;
@@ -263,11 +308,11 @@ namespace BitcoinBlockchain.Parser
         {
             Transaction transaction = new Transaction();
 
-            int positionInBaseStreamAtTransactionStart = (int)blockMemoryStreamReader.BaseStream.Position;
+            int positionInBaseStreamAtTransactionStart = (int) blockMemoryStreamReader.BaseStream.Position;
 
             transaction.TransactionVersion = blockMemoryStreamReader.ReadUInt32();
 
-            int inputsCount = (int)blockMemoryStreamReader.ReadVariableLengthInteger();
+            int inputsCount = (int) blockMemoryStreamReader.ReadVariableLengthInteger();
 
             for (int inputIndex = 0; inputIndex < inputsCount; inputIndex++)
             {
@@ -275,7 +320,7 @@ namespace BitcoinBlockchain.Parser
                 transaction.AddInput(transactionInput);
             }
 
-            int outputsCount = (int)blockMemoryStreamReader.ReadVariableLengthInteger();
+            int outputsCount = (int) blockMemoryStreamReader.ReadVariableLengthInteger();
 
             for (int outputIndex = 0; outputIndex < outputsCount; outputIndex++)
             {
@@ -286,7 +331,7 @@ namespace BitcoinBlockchain.Parser
             // TODO: Need to find out more details about the semantic of TransactionLockTime.
             transaction.TransactionLockTime = blockMemoryStreamReader.ReadUInt32();
 
-            int positionInBaseStreamAfterTransactionEnd = (int)blockMemoryStreamReader.BaseStream.Position;
+            int positionInBaseStreamAfterTransactionEnd = (int) blockMemoryStreamReader.BaseStream.Position;
 
             using (SHA256Managed sha256 = new SHA256Managed())
             {
@@ -296,9 +341,11 @@ namespace BitcoinBlockchain.Parser
                 //// The base stream of blockMemoryStreamReader is that in-memory buffer.
 
                 byte[] baseBuffer = blockMemoryStreamReader.GetBuffer();
-                int transactionBufferSize = positionInBaseStreamAfterTransactionEnd - positionInBaseStreamAtTransactionStart;
+                int transactionBufferSize =
+                    positionInBaseStreamAfterTransactionEnd - positionInBaseStreamAtTransactionStart;
 
-                byte[] hash1 = sha256.ComputeHash(baseBuffer, positionInBaseStreamAtTransactionStart, transactionBufferSize);
+                byte[] hash1 = sha256.ComputeHash(baseBuffer, positionInBaseStreamAtTransactionStart,
+                    transactionBufferSize);
                 transaction.TransactionHash = new ByteArray(sha256.ComputeHash(hash1).ReverseByteArray());
             }
 
@@ -314,13 +361,14 @@ namespace BitcoinBlockchain.Parser
         /// <param name="blockMemoryStreamReader">
         /// Provides access to a section of the Bitcoin blockchain file.
         /// </param>
-        private static Block InternalParseBlockchainFile(string blockchainFileName, BlockMemoryStreamReader blockMemoryStreamReader)
+        private static Block InternalParseBlockchainFile(string blockchainFileName,
+            BlockMemoryStreamReader blockMemoryStreamReader)
         {
             BlockHeader blockHeader = BlockchainParser.ParseBlockHeader(blockMemoryStreamReader);
 
             Block block = new Block(blockchainFileName, blockHeader);
 
-            int blockTransactionCount = (int)blockMemoryStreamReader.ReadVariableLengthInteger();
+            int blockTransactionCount = (int) blockMemoryStreamReader.ReadVariableLengthInteger();
 
             for (int transactionIndex = 0; transactionIndex < blockTransactionCount; transactionIndex++)
             {
@@ -365,7 +413,8 @@ namespace BitcoinBlockchain.Parser
         private static List<FileInfo> GetFileInfoList(string blockchainPath)
         {
             DirectoryInfo directoryInfo = new DirectoryInfo(blockchainPath);
-            return directoryInfo.GetFiles(BlockFileSelector, SearchOption.TopDirectoryOnly).OrderBy(f => f.Name).ToList();
+            return directoryInfo.GetFiles(BlockFileSelector, SearchOption.TopDirectoryOnly).OrderBy(f => f.Name)
+                .ToList();
         }
 
         /// <summary>
@@ -383,8 +432,10 @@ namespace BitcoinBlockchain.Parser
         /// starting from "blk00000.dat" and with no gaps in the numeric section.
         /// Note that this exception is referring only to the file names and not to the files content.
         /// </exception>
-        [SuppressMessage("Microsoft.Naming", "CA2204:Literals should be spelled correctly", Justification = "blk and dat refer to file names and extensions")]
-        [SuppressMessage("StyleCop.CSharp.DocumentationRules", "SA1650:ElementDocumentationMustBeSpelledCorrectly", Justification = "blk and dat refer to file names and extensions.")]
+        [SuppressMessage("Microsoft.Naming", "CA2204:Literals should be spelled correctly", Justification =
+            "blk and dat refer to file names and extensions")]
+        [SuppressMessage("StyleCop.CSharp.DocumentationRules", "SA1650:ElementDocumentationMustBeSpelledCorrectly",
+            Justification = "blk and dat refer to file names and extensions.")]
         private static void ValidateBlockchainFiles(List<FileInfo> blockchainFiles, string firstBlockchainFileName)
         {
             bool lastKnownBlockchainFileFound = false;
@@ -394,7 +445,8 @@ namespace BitcoinBlockchain.Parser
                 string expectedFileName = string.Format(CultureInfo.InvariantCulture, "blk{0:00000}.dat", i);
                 if (expectedFileName != blockchainFiles[i].Name)
                 {
-                    throw new InvalidBlockchainFilesException("The blockchain folder must contain files named with the pattern \"blk?????.dat\", starting from \"blk00000.dat\" and with no gaps in the numeric section.");
+                    throw new InvalidBlockchainFilesException(
+                        "The blockchain folder must contain files named with the pattern \"blk?????.dat\", starting from \"blk00000.dat\" and with no gaps in the numeric section.");
                 }
 
                 if (firstBlockchainFileName == blockchainFiles[i].Name)
@@ -405,7 +457,8 @@ namespace BitcoinBlockchain.Parser
 
             if (firstBlockchainFileName != null && lastKnownBlockchainFileFound == false)
             {
-                throw new InvalidBlockchainFilesException(string.Format(CultureInfo.CurrentCulture, "The blockchain folder must contain file {0}.", firstBlockchainFileName));
+                throw new InvalidBlockchainFilesException(string.Format(CultureInfo.CurrentCulture,
+                    "The blockchain folder must contain file {0}.", firstBlockchainFileName));
             }
         }
 
@@ -426,7 +479,8 @@ namespace BitcoinBlockchain.Parser
         /// In the list of blockchain files given any blockchain files 
         /// that appear prior to the file specified by firstBlockchainFileName will be ignored.
         /// </returns>
-        private static List<FileInfo> SelectFilesToProcess(IEnumerable<FileInfo> allBlockchainFiles, string firstBlockchainFileName)
+        private static List<FileInfo> SelectFilesToProcess(IEnumerable<FileInfo> allBlockchainFiles,
+            string firstBlockchainFileName)
         {
             List<FileInfo> fileInfoList = new List<FileInfo>();
 
@@ -494,10 +548,11 @@ namespace BitcoinBlockchain.Parser
             UInt32 blockId = binaryReader.ReadUInt32();
             if (blockId != this.blockMagicId)
             {
-                throw new InvalidBlockchainContentException(string.Format(CultureInfo.InvariantCulture, "Invalid block Id: {0:X}. Expected: {1:X}", blockId, this.blockMagicId));
+                throw new InvalidBlockchainContentException(string.Format(CultureInfo.InvariantCulture,
+                    "Invalid block Id: {0:X}. Expected: {1:X}", blockId, this.blockMagicId));
             }
 
-            int blockLength = (int)binaryReader.ReadUInt32();
+            int blockLength = (int) binaryReader.ReadUInt32();
             byte[] blockBuffer = binaryReader.ReadBytes(blockLength);
 
             using (BlockMemoryStreamReader blockMemoryStreamReader = new BlockMemoryStreamReader(blockBuffer))
@@ -524,7 +579,8 @@ namespace BitcoinBlockchain.Parser
                 Block block = this.ParseBlockchainFile(blockchainFile.FileName, binaryReader);
                 if (block != null)
                 {
-                    block.PercentageOfCurrentBlockchainFile = (int)(100 * binaryReader.BaseStream.Position / binaryReader.BaseStream.Length);
+                    block.PercentageOfCurrentBlockchainFile =
+                        (int) (100 * binaryReader.BaseStream.Position / binaryReader.BaseStream.Length);
                     yield return block;
                 }
             }

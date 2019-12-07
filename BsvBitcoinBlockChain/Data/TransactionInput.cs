@@ -19,7 +19,16 @@ namespace BitcoinBlockchain.Data
         /// Value used for SourceTransactionOutputIndex to indicate that the input refers to no previous output.
         /// </summary>
         public const UInt32 OutputIndexNotUsed = 0xFFFFFFFF;
+        /// <summary>
+        /// First part of input script
+        /// </summary>
+        public ByteArray Signature { get; set; }
+        /// <summary>
+        /// Second part of input script
+        /// </summary>
+        public ByteArray PubKey { get; set; }
 
+        public string Address { get; set; }
         /// <summary>
         /// Gets or sets the input's script.
         /// </summary>
