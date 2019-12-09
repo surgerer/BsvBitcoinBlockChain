@@ -234,40 +234,45 @@ namespace BitcoinBlockchain.Parser
                 new ByteArray(blockMemoryStreamReader.ReadBytes(32).ReverseByteArray());
             transactionInput.SourceTransactionOutputIndex = blockMemoryStreamReader.ReadUInt32();
 
+
             int scriptLength = (int) blockMemoryStreamReader.ReadVariableLengthInteger();
-            int signLength = (int) blockMemoryStreamReader.ReadVariableLengthInteger();
-
-            if (signLength == 4)
+            var inputScript = new ByteArray(blockMemoryStreamReader.ReadBytes(scriptLength));
+            using (var bmsreader = new BlockMemoryStreamReader(inputScript.ToArray()))
             {
-                // ignore
-                blockMemoryStreamReader.ReadBytes(scriptLength - 1);
-            }
-            else
-            {
-                transactionInput.Signature = new ByteArray(blockMemoryStreamReader.ReadBytes(signLength));
-                if (scriptLength > signLength + 1)
+                int signLength = (int) bmsreader.ReadVariableLengthInteger();
+                if (signLength == 4)
                 {
-                    var pubKeyLength = (int) blockMemoryStreamReader.ReadVariableLengthInteger();
-                    var pubKey = blockMemoryStreamReader.ReadBytes(pubKeyLength);
-                    using (SHA256Managed sha256 = new SHA256Managed())
+                    // ignore
+                    bmsreader.ReadBytes(scriptLength - 1);
+                }
+                else
+                {
+                    transactionInput.Signature = new ByteArray(bmsreader.ReadBytes(signLength));
+                    if (scriptLength > signLength + 1)
                     {
-                        transactionInput.PubKey = new ByteArray(pubKey);
+                        var pubKeyLength = (int) bmsreader.ReadVariableLengthInteger();
+                        if (pubKeyLength > 33)
+                        {
+                            var pubKey = bmsreader.ReadBytes(pubKeyLength);
+                            using (SHA256Managed sha256 = new SHA256Managed())
+                            {
+                                transactionInput.PubKey = new ByteArray(pubKey);
 
-                        var ripemd = HashUtils.Ripemd160(transactionInput.PubKey.ToArray());
-                        var extended = new byte[ripemd.Length + 1];
-                        extended[0] = 0x00;
-                        Array.Copy(ripemd, 0, extended, 1, ripemd.Length);
-                        var doubleHash = sha256.ComputeHash(sha256.ComputeHash(extended));
-                        var newExtended = new byte[extended.Length + 4];
-                        Array.Copy(extended, 0, newExtended, 0, extended.Length);
-                        Array.Copy(doubleHash, 0, newExtended, extended.Length, 4);
-                        transactionInput.Address = Base58.Encode(newExtended);
+                                var ripemd = HashUtils.Ripemd160(transactionInput.PubKey.ToArray());
+                                var extended = new byte[ripemd.Length + 1];
+                                extended[0] = 0x00;
+                                Array.Copy(ripemd, 0, extended, 1, ripemd.Length);
+                                var doubleHash = sha256.ComputeHash(sha256.ComputeHash(extended));
+                                var newExtended = new byte[extended.Length + 4];
+                                Array.Copy(extended, 0, newExtended, 0, extended.Length);
+                                Array.Copy(doubleHash, 0, newExtended, extended.Length, 4);
+                                transactionInput.Address = Base58.Encode(newExtended);
+                            }
+                        }
                     }
                 }
             }
 
-//            // Ignore the script portion.
-//            transactionInput.InputScript = new ByteArray(blockMemoryStreamReader.ReadBytes(scriptLength));
 
             // Ignore the sequence number. 
             blockMemoryStreamReader.SkipBytes(4);
